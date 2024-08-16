@@ -54,7 +54,7 @@ def process_image(input_folder, image, frames_per_image, target_size):
         img = cv2.resize(img, target_size, interpolation=cv2.INTER_AREA)
     return [img] * frames_per_image if img is not None else []
 
-def create_flashback_video(input_folder, output_file, frame_rate=30, display_time=0.175, is_portrait=False):
+def create_flashback_video(input_folder, output_file, frame_rate=30, display_time=0.175, is_portrait=False, skip_confirmation=False):
     valid_images = find_valid_images(input_folder, is_portrait)
 
     if not valid_images:
@@ -65,18 +65,11 @@ def create_flashback_video(input_folder, output_file, frame_rate=30, display_tim
     _, width, height = valid_images[0]
     target_size = calculate_target_size(width, height, is_portrait)
 
-    # 動画ファイルの準備
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video = cv2.VideoWriter(output_file, fourcc, frame_rate, target_size)
-
-    # 1フレームあたりの表示フレーム数
-    frames_per_image = int(frame_rate * display_time)
-
     # 画像の総数と動画の長さを計算
     total_images = len(valid_images)
     video_duration = total_images * display_time
 
-    # ユーザーに確認
+    # 設定情報の表示
     print(f"合計画像数: {total_images}")
     print(f"設定: {frame_rate} FPS, 画像表示時間: {display_time}秒")
     print(f"動画の長さ: {video_duration:.2f}秒")
@@ -84,9 +77,17 @@ def create_flashback_video(input_folder, output_file, frame_rate=30, display_tim
     print(f"モード: {'縦長' if is_portrait else '横長'}")
     print(f"目標サイズ: {target_size}")
 
-    if input("続行しますか？ (y/n): ").lower() != 'y':
-        print("処理を中止しました。")
-        return
+    if not skip_confirmation:
+        if input("続行しますか？ (y/n): ").lower() != 'y':
+            print("処理を中止しました。")
+            return
+
+    # 動画ファイルの準備
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video = cv2.VideoWriter(output_file, fourcc, frame_rate, target_size)
+
+    # 1フレームあたりの表示フレーム数
+    frames_per_image = int(frame_rate * display_time)
 
     # プログレスバーの設定
     with tqdm(total=total_images, desc="画像処理中") as pbar:
@@ -113,6 +114,7 @@ def main():
     parser.add_argument('-f', '--fps', type=int, default=30, help='Frames per second for the output video.')
     parser.add_argument('-t', '--time', type=float, default=0.175, help='Display time for each image in seconds.')
     parser.add_argument('-m', '--mode', type=str, choices=['portrait', 'landscape'], required=True, help='Video mode: portrait or landscape')
+    parser.add_argument('-y', '--yes', action='store_true', help='Skip confirmation and proceed with video creation')
 
     args = parser.parse_args()
 
@@ -131,7 +133,7 @@ def main():
         # 出力ファイルが指定されている場合、そのパスをそのまま使用
         args.output = args.output
 
-    create_flashback_video(args.input_folder, args.output, args.fps, args.time, args.mode == 'portrait')
+    create_flashback_video(args.input_folder, args.output, args.fps, args.time, args.mode == 'portrait', args.yes)
 
 if __name__ == "__main__":
     main()
