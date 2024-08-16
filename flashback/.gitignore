@@ -2,6 +2,7 @@
 testimages/
 
 # 出力されるビデオファイル
+output/
 *.mp4
 *.avi
 

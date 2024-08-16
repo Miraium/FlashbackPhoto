@@ -109,16 +109,27 @@ def create_flashback_video(input_folder, output_file, frame_rate=30, display_tim
 def main():
     parser = argparse.ArgumentParser(description="Combine photos in chronological order into a flashback-style video.")
     parser.add_argument('input_folder', type=str, help='Folder containing input images.')
-    parser.add_argument('-o', '--output', type=str, default='output_video.mp4', help='Output video file path.')
+    parser.add_argument('-o', '--output', type=str, help='Output video file path.')
     parser.add_argument('-f', '--fps', type=int, default=30, help='Frames per second for the output video.')
     parser.add_argument('-t', '--time', type=float, default=0.175, help='Display time for each image in seconds.')
     parser.add_argument('-m', '--mode', type=str, choices=['portrait', 'landscape'], required=True, help='Video mode: portrait or landscape')
 
     args = parser.parse_args()
 
-    # デフォルトの出力ファイル名に日時を追加
-    if args.output == 'output_video.mp4':
-        args.output = f"flashback_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+    # outputフォルダを作成（既に存在する場合は何もしない）
+    output_folder = 'output'
+    os.makedirs(output_folder, exist_ok=True)
+
+    # 出力ファイルパスの設定
+    if args.output is None:
+        # 入力フォルダ名を取得
+        input_folder_name = os.path.basename(os.path.normpath(args.input_folder))
+        # デフォルトのファイル名を生成（flashback_入力フォルダ名_日時.mp4）
+        default_filename = f"flashback_{input_folder_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+        args.output = os.path.join(output_folder, default_filename)
+    else:
+        # 出力ファイルが指定されている場合、そのパスをそのまま使用
+        args.output = args.output
 
     create_flashback_video(args.input_folder, args.output, args.fps, args.time, args.mode == 'portrait')
 
