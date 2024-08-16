@@ -5,13 +5,47 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
-def is_image_ratio_valid(image_path, target_ratio, tolerance=0.1):
+def check_image(image_path, target_ratio, tolerance=0.1):
     img = cv2.imread(image_path)
     if img is None:
-        return False
+        return None
     height, width = img.shape[:2]
     image_ratio = width / height
-    return abs(image_ratio - target_ratio) <= tolerance
+    if abs(image_ratio - target_ratio) <= tolerance:
+        return (image_path, width, height)
+    return None
+
+def find_valid_images(input_folder, is_portrait, tolerance=0.1):
+    all_images = sorted([img for img in os.listdir(input_folder) if img.lower().endswith((".png", ".jpg", ".jpeg"))])
+    
+    # 最初の有効な画像を見つけて、その比率を基準にする
+    first_valid_image = next((os.path.join(input_folder, img) for img in all_images if cv2.imread(os.path.join(input_folder, img)) is not None), None)
+    if first_valid_image is None:
+        return []
+    
+    first_img = cv2.imread(first_valid_image)
+    height, width = first_img.shape[:2]
+    target_ratio = width / height if not is_portrait else height / width
+    
+    with ThreadPoolExecutor() as executor:
+        futures = {executor.submit(check_image, os.path.join(input_folder, img), target_ratio, tolerance): img for img in all_images}
+        valid_images = []
+        with tqdm(total=len(all_images), desc="画像チェック中") as pbar:
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    valid_images.append(result)
+                pbar.update(1)
+    
+    # ソートされた順序を維持するためにソート
+    valid_images.sort(key=lambda x: all_images.index(os.path.basename(x[0])))
+    return valid_images
+
+def calculate_target_size(width, height, is_portrait):
+    if is_portrait:
+        return (int(1920 * width / height), 1920) if height > width else (1080, int(1080 * height / width))
+    else:
+        return (1920, int(1920 * height / width)) if width > height else (int(1080 * width / height), 1080)
 
 def process_image(input_folder, image, frames_per_image, target_size):
     img_path = os.path.join(input_folder, image)
@@ -21,30 +55,15 @@ def process_image(input_folder, image, frames_per_image, target_size):
     return [img] * frames_per_image if img is not None else []
 
 def create_flashback_video(input_folder, output_file, frame_rate=10, display_time=1, use_parallel=False, is_portrait=False):
-    # 画像ファイルのリストを取得し、ソート
-    all_images = sorted([img for img in os.listdir(input_folder) if img.lower().endswith((".png", ".jpg", ".jpeg"))])
+    valid_images = find_valid_images(input_folder, is_portrait)
 
-    if not all_images:
-        print("エラー: 指定されたフォルダに画像が見つかりません。")
+    if not valid_images:
+        print("エラー: 指定されたモードに合う画像が見つかりません。")
         return
 
-    # 最初の画像を読み込んで、フレームサイズと比率を取得
-    first_image = cv2.imread(os.path.join(input_folder, all_images[0]))
-    height, width = first_image.shape[:2]
-    target_ratio = width / height
-
-    # 有効な画像のみをフィルタリング
-    images = [img for img in all_images if is_image_ratio_valid(os.path.join(input_folder, img), target_ratio)]
-
-    if not images:
-        print("エラー: 最初の画像と同じ比率の画像が見つかりません。")
-        return
-
-    # 目標サイズを設定（最大幅または高さを1920ピクセルに）
-    if is_portrait:
-        target_size = (int(1920 * target_ratio), 1920) if target_ratio < 1 else (1080, int(1080 / target_ratio))
-    else:
-        target_size = (1920, int(1920 / target_ratio)) if target_ratio > 1 else (int(1080 * target_ratio), 1080)
+    # 最初の有効な画像からターゲットサイズを計算
+    _, width, height = valid_images[0]
+    target_size = calculate_target_size(width, height, is_portrait)
 
     # 動画ファイルの準備
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
@@ -54,7 +73,7 @@ def create_flashback_video(input_folder, output_file, frame_rate=10, display_tim
     frames_per_image = int(frame_rate * display_time)
 
     # 画像の総数と動画の長さを計算
-    total_images = len(images)
+    total_images = len(valid_images)
     video_duration = total_images * display_time
 
     # ユーザーに確認
@@ -74,7 +93,7 @@ def create_flashback_video(input_folder, output_file, frame_rate=10, display_tim
     with tqdm(total=total_images, desc="画像処理中") as pbar:
         if use_parallel:
             with ThreadPoolExecutor() as executor:
-                futures = [executor.submit(process_image, input_folder, img, frames_per_image, target_size) for img in images]
+                futures = [executor.submit(process_image, os.path.dirname(img_path), os.path.basename(img_path), frames_per_image, target_size) for img_path, _, _ in valid_images]
                 for future in as_completed(futures):
                     frames = future.result()
                     for frame in frames:
@@ -82,8 +101,8 @@ def create_flashback_video(input_folder, output_file, frame_rate=10, display_tim
                             video.write(frame)
                     pbar.update(1)
         else:
-            for img in images:
-                frames = process_image(input_folder, img, frames_per_image, target_size)
+            for img_path, _, _ in valid_images:
+                frames = process_image(os.path.dirname(img_path), os.path.basename(img_path), frames_per_image, target_size)
                 for frame in frames:
                     if frame is not None:
                         video.write(frame)
@@ -102,8 +121,8 @@ def main():
     parser = argparse.ArgumentParser(description="Combine photos in chronological order into a flashback-style video.")
     parser.add_argument('input_folder', type=str, help='Folder containing input images.')
     parser.add_argument('-o', '--output', type=str, default='output_video.mp4', help='Output video file path.')
-    parser.add_argument('-f', '--fps', type=int, default=10, help='Frames per second for the output video.')
-    parser.add_argument('-t', '--time', type=float, default=0.125, help='Display time for each image in seconds.')
+    parser.add_argument('-f', '--fps', type=int, default=30, help='Frames per second for the output video.')
+    parser.add_argument('-t', '--time', type=float, default=0.175, help='Display time for each image in seconds.')
     parser.add_argument('-p', '--parallel', action='store_true', help='Enable parallel processing.')
     parser.add_argument('-m', '--mode', type=str, choices=['portrait', 'landscape'], required=True, help='Video mode: portrait or landscape')
 
