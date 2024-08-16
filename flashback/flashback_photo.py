@@ -54,7 +54,7 @@ def process_image(input_folder, image, frames_per_image, target_size):
         img = cv2.resize(img, target_size, interpolation=cv2.INTER_AREA)
     return [img] * frames_per_image if img is not None else []
 
-def create_flashback_video(input_folder, output_file, frame_rate=10, display_time=1, use_parallel=False, is_portrait=False):
+def create_flashback_video(input_folder, output_file, frame_rate=30, display_time=0.175, is_portrait=False):
     valid_images = find_valid_images(input_folder, is_portrait)
 
     if not valid_images:
@@ -81,7 +81,6 @@ def create_flashback_video(input_folder, output_file, frame_rate=10, display_tim
     print(f"設定: {frame_rate} FPS, 画像表示時間: {display_time}秒")
     print(f"動画の長さ: {video_duration:.2f}秒")
     print(f"出力ファイル: {output_file}")
-    print(f"並列処理: {'有効' if use_parallel else '無効'}")
     print(f"モード: {'縦長' if is_portrait else '横長'}")
     print(f"目標サイズ: {target_size}")
 
@@ -91,22 +90,12 @@ def create_flashback_video(input_folder, output_file, frame_rate=10, display_tim
 
     # プログレスバーの設定
     with tqdm(total=total_images, desc="画像処理中") as pbar:
-        if use_parallel:
-            with ThreadPoolExecutor() as executor:
-                futures = [executor.submit(process_image, os.path.dirname(img_path), os.path.basename(img_path), frames_per_image, target_size) for img_path, _, _ in valid_images]
-                for future in as_completed(futures):
-                    frames = future.result()
-                    for frame in frames:
-                        if frame is not None:
-                            video.write(frame)
-                    pbar.update(1)
-        else:
-            for img_path, _, _ in valid_images:
-                frames = process_image(os.path.dirname(img_path), os.path.basename(img_path), frames_per_image, target_size)
-                for frame in frames:
-                    if frame is not None:
-                        video.write(frame)
-                pbar.update(1)
+        for img_path, _, _ in valid_images:
+            frames = process_image(os.path.dirname(img_path), os.path.basename(img_path), frames_per_image, target_size)
+            for frame in frames:
+                if frame is not None:
+                    video.write(frame)
+            pbar.update(1)
 
     # リソースの解放
     video.release()
@@ -123,7 +112,6 @@ def main():
     parser.add_argument('-o', '--output', type=str, default='output_video.mp4', help='Output video file path.')
     parser.add_argument('-f', '--fps', type=int, default=30, help='Frames per second for the output video.')
     parser.add_argument('-t', '--time', type=float, default=0.175, help='Display time for each image in seconds.')
-    parser.add_argument('-p', '--parallel', action='store_true', help='Enable parallel processing.')
     parser.add_argument('-m', '--mode', type=str, choices=['portrait', 'landscape'], required=True, help='Video mode: portrait or landscape')
 
     args = parser.parse_args()
@@ -132,7 +120,7 @@ def main():
     if args.output == 'output_video.mp4':
         args.output = f"flashback_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
 
-    create_flashback_video(args.input_folder, args.output, args.fps, args.time, args.parallel, args.mode == 'portrait')
+    create_flashback_video(args.input_folder, args.output, args.fps, args.time, args.mode == 'portrait')
 
 if __name__ == "__main__":
     main()
