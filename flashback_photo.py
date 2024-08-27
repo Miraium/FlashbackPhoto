@@ -5,17 +5,18 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
-def check_image(image_path, target_ratio, tolerance=0.1):
+def check_image(image_path, target_ratio):
     img = cv2.imread(image_path)
     if img is None:
         return None
     height, width = img.shape[:2]
     image_ratio = width / height
-    if abs(image_ratio - target_ratio) <= tolerance:
-        return (image_path, width, height)
-    return None
+    # 比率の判定を修正
+    if (image_ratio >= 1 and not target_ratio >= 1) or (image_ratio < 1 and not target_ratio < 1):
+        return None
+    return (image_path, width, height)
 
-def find_valid_images(input_folder, is_portrait, tolerance=0.1):
+def find_valid_images(input_folder, is_portrait):
     all_images = sorted([img for img in os.listdir(input_folder) if img.lower().endswith((".png", ".jpg", ".jpeg"))])
     
     # 最初の有効な画像を見つけて、その比率を基準にする
@@ -28,7 +29,7 @@ def find_valid_images(input_folder, is_portrait, tolerance=0.1):
     target_ratio = width / height if not is_portrait else height / width
     
     with ThreadPoolExecutor() as executor:
-        futures = {executor.submit(check_image, os.path.join(input_folder, img), target_ratio, tolerance): img for img in all_images}
+        futures = {executor.submit(check_image, os.path.join(input_folder, img), target_ratio): img for img in all_images}
         valid_images = []
         with tqdm(total=len(all_images), desc="画像チェック中") as pbar:
             for future in as_completed(futures):
@@ -43,9 +44,9 @@ def find_valid_images(input_folder, is_portrait, tolerance=0.1):
 
 def calculate_target_size(width, height, is_portrait):
     if is_portrait:
-        return (int(1920 * width / height), 1920) if height > width else (1080, int(1080 * height / width))
+        return (1080, int(1080 * height / width))  # 幅1080に設定
     else:
-        return (1920, int(1920 * height / width)) if width > height else (int(1080 * width / height), 1080)
+        return (1920, int(1920 * height / width))  # 幅1920に設定
 
 def process_image(input_folder, image, frames_per_image, target_size):
     img_path = os.path.join(input_folder, image)
@@ -101,7 +102,7 @@ def create_flashback_video(input_folder, output_file, frame_rate=30, display_tim
     # リソースの解放
     video.release()
 
-    # 動画ファイルが正しく作成されたか確認
+    # 動画���ァイルが正しく作成されたか確認
     if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
         print(f"動画ファイルが正常に作成されました: {output_file}")
     else:
